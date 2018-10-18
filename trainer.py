@@ -80,7 +80,7 @@ class Trainer(object):
         save_path = '{}/epoch{}.png'.format(self.recon, epoch + 1)
         print('Generating and Saving Images to {}'.format(save_path))
         with torch.no_grad():
-            images = self.decoder(self.test_noise)
+            images, _, _ = self.decoder(self.test_noise)
             img = torchvision.utils.make_grid(images)
             torchvision.utils.save_image(img, save_path, nrow=self.nrow)
 
