@@ -1,0 +1,5 @@
+*.swp
+*.model
+/dataset
+/recon
+__pycache__
