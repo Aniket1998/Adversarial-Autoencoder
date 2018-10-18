@@ -13,6 +13,7 @@ class Encoder(nn.Module):
         step_down = input_size.bit_length() - 4  # Fast computation of log2(x) - 3
         nl = nn.LeakyReLU(0.2) if nonlinearity is None else nonlinearity
         d = step_channels
+        self.z_dim = z_dim
         model = [nn.Sequential(
             nn.Conv2d(input_channels, d, 4, 2, 1, bias=False),
             nn.BatchNorm2d(d), nl)]
@@ -58,6 +59,7 @@ class Decoder(nn.Module):
         last_nl = nn.Tanh() if last_nonlinearity is None else last_nonlinearity
         step_up = target_size.bit_length() - 4
         d = step_channels * (2 ** step_up)
+        self.z_dim = z_dim
         self.fc = nn.Sequential(
                 nn.Linear(z_dim, d),
                 nn.BatchNorm1d(d), nl)
@@ -69,14 +71,25 @@ class Decoder(nn.Module):
                 nn.ConvTranspose2d(d, d // 2, 4, 2, 1, bias=False),
                 nn.BatchNorm2d(d // 2), nl))
             d = d // 2
-        model.append(nn.Sequential(
-            nn.ConvTranspose2d(d, target_channels, 4, 2, 1, bias=True), last_nl))
+        self.mean_conv = nn.Sequential(nn.ConvTranspose2d(d, target_channels, 4, 2, 1, bias=True), last_nl)
+        self.logvar_conv = nn.Sequential(nn.ConvTranspose2d(d, target_channels, 4, 2, 1, bias=True), last_nl)
         self.model = nn.Sequential(*model)
+
+    def reparametrize(self, mu, logvar):
+        if self.training:
+            eps = torch.randn_like(mu)
+            std = torch.exp(0.5 * logvar)
+            return mu + eps * std
+        else:
+            return mu
 
     def forward(self, x):
         x = self.fc(x)
         x = x.view(-1, x.size(1), 1, 1)
-        return self.model(x)
+        x = self.model(x)
+        mu = self.mean_conv(x)
+        logvar = self.logvar_conv(x)
+        return self.reparametrize(mu, logvar), mu, logvar
 
 
 class Discriminator(nn.Module):
@@ -84,6 +97,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         nl = nn.LeakyReLU(0.2) if nonlinearity is None else nonlinearity
         last_nl = nn.LeakyReLU(0.2) if nonlinearity is None else nonlinearity
+        self.z_dim = z_dim
         self.model = nn.Sequential(
                 nn.Linear(z_dim, 512, bias=True), nl,
                 nn.Linear(512, 256, bias=False),
